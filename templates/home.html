@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+        <!--
+                home.html
+                Purpose: UI for starting a new patient monitoring session.
+
+                Key elements (IDs):
+                - patientForm: form element used to submit the patient name.
+                - patientName: text input for the patient's name.
+                - startBtn: button that triggers `/start-session` (POST) to create a session.
+                - historyBtn: navigates to `/history` to inspect past sessions.
+                - statusMessage: area to show errors, loading, and success messages.
+                - recentPatientsSection / patientList: populated from `/get-recent-patients`.
+
+                Behavior notes:
+                - On successful session start the page stores `currentSession` in
+                    localStorage (keys: session_id, patient_name, table_name, timestamp)
+                    and redirects to `/data` to view live monitoring.
+                - This page calls the backend endpoints: `/start-session` (POST) and
+                    `/get-recent-patients` (GET).
+        -->
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Patient Monitoring System - Start Session</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 50px;
+            max-width: 500px;
+            width: 100%;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .header h1 {
+            color: #333;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #666;
+            font-size: 1em;
+        }
+
+        .icon {
+            font-size: 3em;
+            margin-bottom: 15px;
+        }
+
+        .form-group {
+            margin-bottom: 25px;
+        }
+
+        label {
+            display: block;
+            color: #333;
+            font-weight: 600;
+            margin-bottom: 8px;
+            font-size: 1em;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1em;
+            transition: border-color 0.3s, box-shadow 0.3s;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        input[type="text"]::placeholder {
+            color: #999;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 30px;
+        }
+
+        button {
+            flex: 1;
+            padding: 14px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .btn-start {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-start:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-start:active {
+            transform: translateY(0);
+        }
+
+        .btn-start:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-history {
+            background: #f0f0f0;
+            color: #333;
+            border: 2px solid #e0e0e0;
+        }
+
+        .btn-history:hover {
+            background: #e8e8e8;
+            border-color: #d0d0d0;
+        }
+
+        .status-message {
+            margin-top: 20px;
+            padding: 12px 15px;
+            border-radius: 8px;
+            text-align: center;
+            display: none;
+            font-size: 0.9em;
+        }
+
+        .status-message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .status-message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status-message.loading {
+            background: #cce5ff;
+            color: #004085;
+            border: 1px solid #b8daff;
+        }
+
+        .info-box {
+            background: #f9f9f9;
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 25px;
+            font-size: 0.9em;
+            color: #555;
+            line-height: 1.6;
+        }
+
+        .info-box strong {
+            color: #333;
+        }
+
+        .recent-patients {
+            margin-top: 40px;
+            padding-top: 30px;
+            border-top: 2px solid #f0f0f0;
+        }
+
+        .recent-patients h3 {
+            color: #666;
+            font-size: 1em;
+            margin-bottom: 15px;
+        }
+
+        .patient-list {
+            display: grid;
+            gap: 8px;
+        }
+
+        .patient-item {
+            background: #f9f9f9;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 1px solid #e0e0e0;
+        }
+
+        .patient-item:hover {
+            background: #f0f0f0;
+            border-color: #667eea;
+        }
+
+        .patient-name {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .patient-date {
+            font-size: 0.85em;
+            color: #999;
+            margin-top: 3px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="icon">👨‍⚕️</div>
+            <h1>Patient Monitor</h1>
+            <p>Start a new monitoring session</p>
+        </div>
+
+        <div class="info-box">
+            <strong>Monitored Parameters:</strong><br>
+            • Heart Rate (HR)<br>
+            • Temperature<br>
+            • Peripheral Oxygen Saturation (SpO₂)<br>
+            • Infuse Level<br>
+            <br>
+            <strong>How to use:</strong><br>
+            Enter the patient's name and click "Start Monitoring" to begin recording vital signs and patient data.
+        </div>
+
+        <form id="patientForm">
+            <div class="form-group">
+                <label for="patientName">Patient Name</label>
+                <input 
+                    type="text" 
+                    id="patientName" 
+                    placeholder="Enter patient name" 
+                    required
+                    autocomplete="off"
+                >
+            </div>
+
+            <div class="button-group">
+                <button type="submit" class="btn-start" id="startBtn">Start Monitoring</button>
+                <button type="button" class="btn-history" id="historyBtn">View History</button>
+            </div>
+        </form>
+
+        <div class="status-message" id="statusMessage"></div>
+
+        <div class="recent-patients" id="recentPatientsSection" style="display: none;">
+            <h3>Recent Patients</h3>
+            <div class="patient-list" id="patientList"></div>
+        </div>
+    </div>
+
+    <script>
+        const patientForm = document.getElementById('patientForm');
+        const patientNameInput = document.getElementById('patientName');
+        const statusMessage = document.getElementById('statusMessage');
+        const startBtn = document.getElementById('startBtn');
+        const historyBtn = document.getElementById('historyBtn');
+        const recentPatientsSection = document.getElementById('recentPatientsSection');
+        const patientList = document.getElementById('patientList');
+
+        // Load recent patients on page load
+        window.addEventListener('load', loadRecentPatients);
+
+        // Handle form submission
+        patientForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const patientName = patientNameInput.value.trim();
+            
+            if (!patientName) {
+                showMessage('Please enter a patient name', 'error');
+                return;
+            }
+
+            await startMonitoringSession(patientName);
+        });
+
+        // Handle history button
+        historyBtn.addEventListener('click', () => {
+            window.location.href = '/history';
+        });
+
+        async function startMonitoringSession(patientName) {
+            startBtn.disabled = true;
+            showMessage('Starting monitoring session...', 'loading');
+
+            try {
+                const response = await fetch('/start-session', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ patient_name: patientName })
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showMessage('Session started! Redirecting...', 'success');
+                    // Store session info in localStorage
+                    localStorage.setItem('currentSession', JSON.stringify({
+                        session_id: result.session_id,
+                        patient_name: patientName,
+                        table_name: result.table_name,
+                        timestamp: result.timestamp
+                    }));
+                    
+                    // Redirect to data page after 1 second
+                    setTimeout(() => {
+                        window.location.href = '/data';
+                    }, 1000);
+                } else {
+                    showMessage(result.message || 'Error starting session', 'error');
+                    startBtn.disabled = false;
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                showMessage('Error starting session. Please try again.', 'error');
+                startBtn.disabled = false;
+            }
+        }
+
+        async function loadRecentPatients() {
+            try {
+                const response = await fetch('/get-recent-patients');
+                const data = await response.json();
+
+                if (data.patients && data.patients.length > 0) {
+                    recentPatientsSection.style.display = 'block';
+                    patientList.innerHTML = data.patients.map(patient => `
+                        <div class="patient-item" onclick="quickStart('${patient.patient_name}')">
+                            <div class="patient-name">${escapeHtml(patient.patient_name)}</div>
+                            <div class="patient-date">Last: ${new Date(patient.created_at).toLocaleString()}</div>
+                        </div>
+                    `).join('');
+                }
+            } catch (error) {
+                console.error('Error loading recent patients:', error);
+            }
+        }
+
+        function quickStart(patientName) {
+            patientNameInput.value = patientName;
+            startMonitoringSession(patientName);
+        }
+
+        function showMessage(message, type) {
+            statusMessage.textContent = message;
+            statusMessage.className = `status-message ${type}`;
+            statusMessage.style.display = 'block';
+        }
+
+        function escapeHtml(text) {
+            const map = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            };
+            return text.replace(/[&<>"']/g, m => map[m]);
+        }
+    </script>
+</body>
+</html>

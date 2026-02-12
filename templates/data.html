@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <!--
+        data.html
+        Purpose: Displays live data during an active monitoring session.
+
+        Key elements (IDs):
+        - patientInfo      : shows current patient/session metadata (from /get-current-session)
+        - loading          : initial loading / waiting-for-data indicator
+        - data-content     : main UI shown when data is available
+        - charts-container : where Chart.js charts are dynamically created
+        - data-cards       : visual cards for each field in incoming payloads
+        - json-data        : raw JSON display of the latest payload
+        - timestamp        : last-updated timestamp field
+
+        Backend interactions:
+        - GET /get-current-session  : fetches the active session metadata
+        - GET /stream-data          : connects via Server-Sent Events (SSE) to receive live payloads
+        - POST /stop-session        : stops the active session
+
+        Notes:
+        - The page uses SSE (EventSource) to receive `data` events; each event
+          is expected to carry a JSON payload. Numeric fields are plotted with Chart.js.
+    -->
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Patient Monitoring - Data Display</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            padding: 40px;
+            max-width: 800px;
+            width: 100%;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            text-align: center;
+            font-size: 2em;
+        }
+
+        .patient-info {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        .patient-info h2 {
+            font-size: 1.5em;
+            margin-bottom: 5px;
+        }
+
+        .patient-info p {
+            font-size: 0.9em;
+            opacity: 0.9;
+        }
+
+        .data-section {
+            margin-bottom: 30px;
+        }
+
+        .data-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-top: 15px;
+        }
+
+        .data-card {
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            border-radius: 5px;
+            transition: transform 0.2s;
+        }
+
+        .data-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        .data-card.spo2-card {
+            border-left: 4px solid #FF6B35;
+            background: #FFF5F0;
+        }
+
+        .data-card.spo2-card.critical {
+            border-left: 4px solid #DC143C;
+            background: #FFE4E1;
+        }
+
+        .data-card.spo2-card.warning {
+            border-left: 4px solid #FFA500;
+            background: #FFF8DC;
+        }
+
+        .data-card.spo2-card.normal {
+            border-left: 4px solid #28A745;
+            background: #F0FFF4;
+        }
+
+        .data-card.spo2-card {
+            border-left: 4px solid #FF6B35;
+            background: #FFF5F0;
+        }
+
+        .data-card.spo2-card.critical {
+            border-left: 4px solid #DC143C;
+            background: #FFE4E1;
+        }
+
+        .data-card.spo2-card.warning {
+            border-left: 4px solid #FFA500;
+            background: #FFF8DC;
+        }
+
+        .data-card.spo2-card.normal {
+            border-left: 4px solid #28A745;
+            background: #F0FFF4;
+        }
+
+        .data-label {
+            font-size: 0.9em;
+            color: #666;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 5px;
+        }
+
+        .data-value {
+            font-size: 1.8em;
+            color: #333;
+            font-weight: bold;
+        }
+
+        .json-display {
+            background: #f4f4f4;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 15px;
+            overflow-x: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            color: #333;
+            margin-top: 15px;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: 600;
+            margin-top: 10px;
+        }
+
+        .status-badge.success {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-badge.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .status-badge.warning {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .back-link {
+            display: inline-block;
+            margin-top: 20px;
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 600;
+            transition: color 0.2s;
+        }
+
+        .back-link:hover {
+            color: #764ba2;
+        }
+
+        .nav-buttons {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            justify-content: center;
+        }
+
+        .nav-btn {
+            padding: 10px 20px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            text-decoration: none;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+
+        .nav-btn:hover {
+            background: #764ba2;
+        }
+
+        .btn-stop {
+            padding: 10px 20px;
+            background: #ff6b6b;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            text-decoration: none;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+
+        .btn-stop:hover {
+            background: #ff5252;
+            transform: translateY(-2px);
+        }
+
+        .chart-section {
+            margin: 30px 0;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 5px;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 300px;
+            margin-top: 15px;
+        }
+
+        .chart-wrapper {
+            margin-bottom: 40px;
+            padding: 20px;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+
+        .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .chart-header h3 {
+            color: #333;
+            font-size: 1.2em;
+            margin: 0;
+        }
+
+        .chart-nav {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .nav-btn-chart {
+            padding: 8px 12px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: background 0.2s;
+        }
+
+        .nav-btn-chart:hover:not(:disabled) {
+            background: #764ba2;
+        }
+
+        .nav-btn-chart:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .data-counter {
+            font-size: 0.9em;
+            color: #666;
+            min-width: 150px;
+            text-align: right;
+            color: #999;
+            font-size: 0.85em;
+            margin-top: 10px;
+        }
+
+        #loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 10px auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📊 Patient Data Monitor</h1>
+        
+        <div class="patient-info" id="patientInfo">
+            <h2>Loading patient info...</h2>
+        </div>
+        
+        <div class="nav-buttons">
+            <a href="/" class="nav-btn">← Home</a>
+            <a href="/history" class="nav-btn">📈 View History</a>
+            <button class="btn-stop" onclick="stopMonitoring()">⏹️ Stop Monitoring</button>
+        </div>
+        
+        <div id="loading">
+            <div class="spinner"></div>
+            <p>Waiting for data...</p>
+        </div>
+
+        <div id="data-content" style="display: none;">
+            <div class="chart-section">
+                <h2 style="font-size: 1.3em; color: #333; margin-bottom: 15px;">📊 Data Visualization</h2>
+                <div id="charts-container"></div>
+            </div>
+
+            <div class="data-section">
+                <h2 style="font-size: 1.3em; color: #333; margin-bottom: 15px;">Received Data</h2>
+                <div class="data-grid" id="data-cards"></div>
+            </div>
+
+            <div class="data-section">
+                <h3 style="color: #666; margin-bottom: 10px;">Raw JSON</h3>
+                <div class="json-display" id="json-data"></div>
+            </div>
+
+            <div style="margin-top: 20px; text-align: center;">
+                <span class="timestamp">Last updated: <span id="timestamp">-</span></span>
+            </div>
+
+            <a href="/" class="back-link">← Back to Home</a>
+        </div>
+    </div>
+
+    <script>
+        let lastData = null;
+        let eventSource = null;
+        let charts = {}; // Store individual charts for each field
+        let chartData = {}; // Store data for each field
+        const MAX_POINTS = 3600;
+        const DISPLAY_POINTS = 100; // Points to display at a time
+        let currentView = {}; // Track current view position for each chart
+
+        // Connect to Server-Sent Events stream
+        function connectToStream() {
+            eventSource = new EventSource('/stream-data');
+
+            eventSource.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    displayData(data);
+                    updateCharts(data);
+                } catch (error) {
+                    console.error('Error parsing data:', error);
+                }
+            };
+
+            eventSource.onerror = function(error) {
+                console.error('Stream error:', error);
+                setTimeout(connectToStream, 3000);
+            };
+        }
+
+        function updateCharts(data) {
+            const now = new Date().toLocaleTimeString();
+
+            // Process numeric fields
+            for (const [key, value] of Object.entries(data)) {
+                if (key.startsWith('_')) continue;
+
+                if (typeof value === 'number') {
+                    // Initialize data array if not exists
+                    if (!chartData[key]) {
+                        chartData[key] = [];
+                        currentView[key] = 0;
+                        createChart(key);
+                    }
+
+                    // Add new data point
+                    chartData[key].push({
+                        time: now,
+                        value: value
+                    });
+
+                    // Keep only last MAX_POINTS
+                    if (chartData[key].length > MAX_POINTS) {
+                        chartData[key].shift();
+                    }
+
+                    // Update chart display with auto-scroll to latest data
+                    updateChartDisplay(key, true);
+                }
+            }
+        }
+
+        function createChart(fieldName) {
+            // Create wrapper div if not exists
+            const chartsContainer = document.getElementById('charts-container');
+            const wrapper = document.createElement('div');
+            wrapper.className = 'chart-wrapper';
+            wrapper.id = `chart-wrapper-${fieldName}`;
+            wrapper.innerHTML = `
+                <div class="chart-header">
+                    <h3>${fieldName}</h3>
+                    <div class="chart-nav">
+                        <button class="nav-btn-chart" id="prev-${fieldName}" onclick="navigateChart('${fieldName}', -1)">← Prev</button>
+                        <div class="data-counter" id="counter-${fieldName}">0 / 0</div>
+                        <button class="nav-btn-chart" id="next-${fieldName}" onclick="navigateChart('${fieldName}', 1)">Next →</button>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <canvas id="chart-${fieldName}"></canvas>
+                </div>
+            `;
+            chartsContainer.appendChild(wrapper);
+
+            // Create chart
+            const ctx = document.getElementById(`chart-${fieldName}`);
+            charts[fieldName] = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: fieldName,
+                        data: [],
+                        borderColor: '#667eea',
+                        backgroundColor: '#667eea20',
+                        tension: 0.4,
+                        fill: true,
+                        pointRadius: 2,
+                        pointHoverRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: false
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateChartDisplay(fieldName, autoScroll = false) {
+            const totalPoints = chartData[fieldName].length;
+            
+            // Auto-scroll to latest data if enabled
+            if (autoScroll && totalPoints > DISPLAY_POINTS) {
+                currentView[fieldName] = totalPoints - DISPLAY_POINTS;
+            }
+            
+            const startIdx = currentView[fieldName];
+            const endIdx = Math.min(startIdx + DISPLAY_POINTS, totalPoints);
+            
+            const visibleData = chartData[fieldName].slice(startIdx, endIdx);
+            
+            // Update chart data
+            const chart = charts[fieldName];
+            chart.data.labels = visibleData.map(d => d.time);
+            chart.data.datasets[0].data = visibleData.map(d => d.value);
+            chart.update();
+
+            // Update counter
+            const counter = document.getElementById(`counter-${fieldName}`);
+            counter.textContent = `${startIdx + 1} - ${endIdx} / ${totalPoints}`;
+
+            // Update button states
+            document.getElementById(`prev-${fieldName}`).disabled = startIdx === 0;
+            document.getElementById(`next-${fieldName}`).disabled = endIdx >= totalPoints;
+        }
+
+        function navigateChart(fieldName, direction) {
+            const totalPoints = chartData[fieldName].length;
+            const newView = currentView[fieldName] + (direction * DISPLAY_POINTS);
+            
+            // Constrain to valid range
+            currentView[fieldName] = Math.max(0, Math.min(newView, Math.max(0, totalPoints - DISPLAY_POINTS)));
+            
+            updateChartDisplay(fieldName);
+        }
+
+        function displayData(data) {
+            lastData = data;
+            
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('data-content').style.display = 'block';
+
+            document.getElementById('json-data').textContent = JSON.stringify(data, null, 2);
+
+            const cardsContainer = document.getElementById('data-cards');
+            cardsContainer.innerHTML = '';
+
+            if (typeof data === 'object' && data !== null) {
+                for (const [key, value] of Object.entries(data)) {
+                    if (key.startsWith('_')) continue;
+                    
+                    const card = document.createElement('div');
+                    let cardClass = 'data-card';
+                    let statusBadge = '';
+                    
+                    // Check if this is SpO2 field
+                    if (key.toLowerCase().includes('spo2') && typeof value === 'number') {
+                        const status = getSpO2Status(value);
+                        cardClass += ` spo2-card ${status}`;
+                        statusBadge = `<div style="margin-top: 8px; font-size: 0.8em; color: #666;">Status: ${getSpO2StatusText(value)}</div>`;
+                    }
+                    
+                    card.className = cardClass;
+                    card.innerHTML = `
+                        <div class="data-label">${key}</div>
+                        <div class="data-value">${formatValue(value, key)}</div>
+                        ${statusBadge}
+                    `;
+                    cardsContainer.appendChild(card);
+                }
+            }
+
+            if (data._timestamp) {
+                const date = new Date(data._timestamp);
+                document.getElementById('timestamp').textContent = date.toLocaleString();
+            } else {
+                document.getElementById('timestamp').textContent = new Date().toLocaleString();
+            }
+        }
+
+        function formatValue(value, fieldName = '') {
+            if (typeof value === 'boolean') {
+                return value ? '✓ Yes' : '✗ No';
+            }
+            if (typeof value === 'number') {
+                // Add unit for SpO2
+                if (fieldName.toLowerCase().includes('spo2')) {
+                    return `${value.toFixed(1)}%`;
+                }
+                return value.toFixed(2);
+            }
+            if (Array.isArray(value)) {
+                return `[${value.join(', ')}]`;
+            }
+            return String(value);
+        }
+
+        function getSpO2Status(value) {
+            if (value >= 95) return 'normal';
+            if (value >= 90) return 'warning';
+            return 'critical';
+        }
+
+        function getSpO2StatusText(value) {
+            if (value >= 95) return 'Normal';
+            if (value >= 90) return 'Low';
+            return 'Critical';
+        }
+
+        async function stopMonitoring() {
+            try {
+                const response = await fetch('/stop-session', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                
+                if (response.ok) {
+                    // Close event source and redirect
+                    if (eventSource) {
+                        eventSource.close();
+                    }
+                    alert('Monitoring stopped. Redirecting to home...');
+                    window.location.href = '/';
+                } else {
+                    alert('Error stopping monitoring');
+                }
+            } catch (error) {
+                console.error('Error stopping monitoring:', error);
+                alert('Error stopping monitoring');
+            }
+        }
+
+        window.addEventListener('load', function() {
+            loadPatientInfo();
+            connectToStream();
+        });
+
+        async function loadPatientInfo() {
+            try {
+                const response = await fetch('/get-current-session');
+                const sessionData = await response.json();
+                
+                if (sessionData && sessionData.patient_name) {
+                    const patientInfo = document.getElementById('patientInfo');
+                    const timestamp = new Date(sessionData.timestamp).toLocaleString();
+                    patientInfo.innerHTML = `
+                        <h2>${sessionData.patient_name}</h2>
+                        <p>Session started: ${timestamp}</p>
+                    `;
+                } else {
+                    // Redirect to home if no session
+                    window.location.href = '/';
+                }
+            } catch (error) {
+                console.error('Error loading patient info:', error);
+            }
+        }
+
+        window.addEventListener('beforeunload', function() {
+            if (eventSource) {
+                eventSource.close();
+            }
+        });
+    </script>
+</body>
+</html>
