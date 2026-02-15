@@ -143,6 +143,61 @@
             background: #F0FFF4;
         }
 
+        .data-card.temperature-card {
+            border-left: 4px solid #FF6B35;
+            background: #FFF5F0;
+        }
+
+        .data-card.temperature-card.normal {
+            border-left: 4px solid #28A745;
+            background: #F0FFF4;
+        }
+
+        .data-card.temperature-card.low {
+            border-left: 4px solid #0066CC;
+            background: #E3F2FD;
+        }
+
+        .data-card.temperature-card.high {
+            border-left: 4px solid #DC143C;
+            background: #FFE4E1;
+        }
+
+        .data-card.heart-rate-card {
+            border-left: 4px solid #E91E63;
+            background: #FCE4EC;
+        }
+
+        .data-card.heart-rate-card.normal {
+            border-left: 4px solid #28A745;
+            background: #F0FFF4;
+        }
+
+        .data-card.heart-rate-card.low {
+            border-left: 4px solid #0066CC;
+            background: #E3F2FD;
+        }
+
+        .data-card.heart-rate-card.high {
+            border-left: 4px solid #DC143C;
+            background: #FFE4E1;
+        }
+
+        .data-card.infuse-level-card {
+            border-left: 4px solid #FF9800;
+            background: #FFF3E0;
+        }
+
+        .data-card.infuse-level-card.normal {
+            border-left: 4px solid #28A745;
+            background: #F0FFF4;
+        }
+
+        .data-card.infuse-level-card.low {
+            border-left: 4px solid #DC143C;
+            background: #FFE4E1;
+        }
+
         .data-label {
             font-size: 0.9em;
             color: #666;
@@ -562,6 +617,24 @@
                         cardClass += ` spo2-card ${status}`;
                         statusBadge = `<div style="margin-top: 8px; font-size: 0.8em; color: #666;">Status: ${getSpO2StatusText(value)}</div>`;
                     }
+                    // Check if this is Temperature field
+                    else if (key.toLowerCase().includes('temperature') && typeof value === 'number') {
+                        const status = getTemperatureStatus(value);
+                        cardClass += ` temperature-card ${status}`;
+                        statusBadge = `<div style="margin-top: 8px; font-size: 0.8em; color: #666;">Status: ${getTemperatureStatusText(value)}</div>`;
+                    }
+                    // Check if this is Heart Rate field
+                    else if ((key.toLowerCase().includes('heart') || key.toLowerCase().includes('hr') || key.toLowerCase().includes('pulse')) && typeof value === 'number') {
+                        const status = getHeartRateStatus(value);
+                        cardClass += ` heart-rate-card ${status}`;
+                        statusBadge = `<div style="margin-top: 8px; font-size: 0.8em; color: #666;">Status: ${getHeartRateStatusText(value)}</div>`;
+                    }
+                    // Check if this is Infuse Level field
+                    else if ((key.toLowerCase().includes('infuse') || key.toLowerCase().includes('infusion')) && typeof value === 'number') {
+                        const status = getInfuseLevelStatus(value);
+                        cardClass += ` infuse-level-card ${status}`;
+                        statusBadge = `<div style="margin-top: 8px; font-size: 0.8em; color: #666;">Status: ${getInfuseLevelStatusText(value)}</div>`;
+                    }
                     
                     card.className = cardClass;
                     card.innerHTML = `
@@ -590,6 +663,18 @@
                 if (fieldName.toLowerCase().includes('spo2')) {
                     return `${value.toFixed(1)}%`;
                 }
+                // Add unit for Temperature
+                if (fieldName.toLowerCase().includes('temperature')) {
+                    return `${value.toFixed(1)}°C`;
+                }
+                // Add unit for Heart Rate
+                if (fieldName.toLowerCase().includes('heart') || fieldName.toLowerCase().includes('hr') || fieldName.toLowerCase().includes('pulse')) {
+                    return `${value.toFixed(0)} bpm`;
+                }
+                // Add unit for Infuse Level
+                if (fieldName.toLowerCase().includes('infuse') || fieldName.toLowerCase().includes('infusion')) {
+                    return `${value.toFixed(1)}`;
+                }
                 return value.toFixed(2);
             }
             if (Array.isArray(value)) {
@@ -608,6 +693,40 @@
             if (value >= 95) return 'Normal';
             if (value >= 90) return 'Low';
             return 'Critical';
+        }
+
+        function getTemperatureStatus(value) {
+            if (value >= 36.1 && value <= 37.0) return 'normal';
+            if (value < 36.1) return 'low';
+            return 'high';
+        }
+
+        function getTemperatureStatusText(value) {
+            if (value >= 36.1 && value <= 37.0) return 'Normal';
+            if (value < 36.1) return 'Too Low';
+            return 'Too High';
+        }
+
+        function getHeartRateStatus(value) {
+            if (value >= 60 && value <= 100) return 'normal';
+            if (value < 60) return 'low';
+            return 'high';
+        }
+
+        function getHeartRateStatusText(value) {
+            if (value >= 60 && value <= 100) return 'Normal';
+            if (value < 60) return 'Too Low';
+            return 'Too High';
+        }
+
+        function getInfuseLevelStatus(value) {
+            if (value < 20) return 'low';
+            return 'normal';
+        }
+
+        function getInfuseLevelStatusText(value) {
+            if (value < 20) return 'Low';
+            return 'Normal';
         }
 
         async function stopMonitoring() {
